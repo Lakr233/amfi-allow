@@ -1,0 +1,3 @@
+amfi-allow
+*.dSYM/
+.DS_Store
