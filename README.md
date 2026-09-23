@@ -81,6 +81,13 @@ removes the preference and restarts `amfid`.
   immediately.
 - Re-signing changes the cdhash, so rebuilding means running `allow` again.
 
+## Research
+
+[`RESEARCH.md`](RESEARCH.md) has the full derivation: why patching `amfid` is
+closed on an enforcing host, why dylib injection is a consequence of this rather
+than a route to it, the disassembly the mechanism was read out of, the positive
+and negative controls, and an address appendix for retracing the work.
+
 ## License
 
 MIT
