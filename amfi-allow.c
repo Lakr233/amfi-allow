@@ -114,7 +114,11 @@ static void *strip_pac(void *addr) {
     static int have_bits = 0;
     if (!have_bits) {
         size_t len = sizeof(bits);
-        if (sysctlbyname("machdep.virtual_address_size", &bits, &len, NULL, 0) != 0) bits = -1;
+        if (sysctlbyname("machdep.virtual_address_size", &bits, &len, NULL, 0) != 0 ||
+            bits == 0 || bits >= 64) {
+            fprintf(stderr, "error: cannot determine a valid virtual address width\n");
+            exit(1);
+        }
         have_bits = 1;
     }
     return (void *)((uintptr_t)addr & ((1UL << bits) - 1));
@@ -190,7 +194,7 @@ static mach_vm_address_t singleton_slot(void) {
             int rd = (int)(w & 0x1F);
             int64_t imm = (int64_t)((((w >> 5) & 0x7FFFF) << 2) | ((w >> 29) & 3));
             if (imm & (1 << 20)) imm -= (1 << 21); // sign extend 21 bits
-            page[rd] = (((uint64_t)(uintptr_t)&code[i]) & ~0xFFFULL) + (uint64_t)(imm << 12);
+            page[rd] = (((uint64_t)(uintptr_t)&code[i]) & ~0xFFFULL) + (uint64_t)(imm * 4096);
             have[rd] = 1;
         } else if ((w & 0xFFC00000u) == 0xF9400000u) { // LDR Xt, [Xn, #imm12*8]
             int rn = (int)((w >> 5) & 0x1F);
@@ -198,7 +202,10 @@ static mach_vm_address_t singleton_slot(void) {
             mach_vm_address_t slot = (mach_vm_address_t)(page[rn] + (((w >> 10) & 0xFFF) * 8));
             uintptr_t value = 0;
             if (peek_self((uintptr_t)slot, &value, sizeof(value)) && value == (uintptr_t)local) {
-                if (found && found != slot) matches++;
+                if (found && found != slot) {
+                    fprintf(stderr, "error: ambiguous singleton slot; refusing\n");
+                    exit(1);
+                }
                 found = slot;
                 matches++;
             }
@@ -504,6 +511,16 @@ static void report(const char *self_path) {
 // --------------------------------------------------------------------------
 
 static int cmd_allow(const char *self_path, int count, char **paths, int hold_seconds) {
+    // Validate access and the runtime layout before persisting any preference.
+    if (!attach_amfid(self_path)) return 1;
+    mach_vm_address_t mgr = amfid_manager(self_path);
+    if (!mgr) return 1;
+    // Do not replace an existing policy or proceed when its state is unknown.
+    struct stat existing;
+    if (lstat(PREFS_PATH, &existing) == 0 || errno != ENOENT) {
+        fprintf(stderr, "error: preference exists or cannot be inspected; refusing to overwrite\n");
+        return 1;
+    }
     CFStringRef req = requirement_for(count, paths);
     char buf[4096];
     CFStringGetCString(req, buf, sizeof(buf), kCFStringEncodingUTF8);
@@ -512,10 +529,6 @@ static int cmd_allow(const char *self_path, int count, char **paths, int hold_se
     if (!write_prefs(req)) return 1;
     CFRelease(req);
     printf("wrote %s\n", PREFS_PATH);
-
-    if (!attach_amfid(self_path)) return 1;
-    mach_vm_address_t mgr = amfid_manager(self_path);
-    if (!mgr) return 1;
 
     // amfid is already holding the stock requirement, so "non-NULL" proves
     // nothing. Adoption is the pointer changing: the preference path releases

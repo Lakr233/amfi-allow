@@ -57,6 +57,10 @@ sudo ./amfi-allow off
 
 `allow` computes the binary's cdhashes, appends them to the stock requirement,
 writes the preference, sets the byte, and waits for `amfid` to adopt the result.
+`allow` refuses to overwrite an existing preference file or continue if its
+state cannot be inspected. It does not merge a previous allowlist; review any
+existing policy before deliberately replacing it.
+
 `--hold N` keeps re-applying for N seconds in case `amfid` restarts. `off`
 removes the preference and restarts `amfid`.
 
@@ -68,8 +72,9 @@ removes the preference and restarts `amfid`.
 
 ## Notes
 
-- The byte lives only in `amfid`'s memory. Re-run `allow` after a reboot or any
-  `amfid` restart — the preference file persists, the byte does not.
+- The byte lives only in `amfid`'s memory. A reboot or any `amfid` restart
+  resets the byte, although the preference file persists. Since `allow` refuses
+  to overwrite that file, review the existing policy before reapplying.
 - Allowlist your binary **in its bundle**. A binary signed as part of a bundle
   seals the bundle's `Info.plist`; copied out on its own, its signature no longer
   verifies and it fails before entitlements are ever considered.
